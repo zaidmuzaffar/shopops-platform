@@ -1,0 +1,17 @@
+{
+  "name": "shopops-inventory-api",
+  "version": "0.1.0",
+  "description": "Inventory API for the ShopOps platform",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  },
+  "license": "MIT"
+}
