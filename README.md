@@ -30,7 +30,7 @@ The application itself is deliberately small. The interesting part is everything
 | Phase | What | Status |
 |---|---|---|
 | 0 | App, repository layout, tests | ✅ |
-| 1 | Docker: multi-stage, non-root images, docker-compose | ⏳ |
+| 1 | Docker: multi-stage, non-root images, docker-compose | ✅ |
 | 2 | CI: GitHub Actions — tests, build, Trivy scan, push to GHCR | ⏳ |
 | 3 | Terraform + AWS: VPC, IAM least privilege, GitHub OIDC, budgets | ⏳ |
 | 4 | Kubernetes: k3d/k3s, Helm chart, ingress, probes, autoscaling | ⏳ |
@@ -67,7 +67,22 @@ The application itself is deliberately small. The interesting part is everything
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `APP_VERSION` | from `package.json` | Version shown by `/api/version` |
 
-## Run locally
+## Run with Docker (recommended)
+
+```bash
+cp .env.example .env          # then set a password in .env
+docker compose up -d --build  # db + api + web
+docker compose ps             # all three should show (healthy)
+```
+
+Open **http://localhost:8080**. Logs: `docker compose logs -f api`. Stop: `docker compose down` (data is kept).
+
+| Image | Base | Runs as | Notes |
+|---|---|---|---|
+| `shopops-api` | `node:22-alpine` | `node` | multi-stage, read-only filesystem |
+| `shopops-web` | `nginx-unprivileged` | uid 101 | serves UI, proxies `/api` |
+
+## Run without Docker
 
 ```bash
 cd app/api
@@ -86,8 +101,9 @@ DATABASE_URL=postgres://postgres:devpass@localhost:5432/shopops WEB_DIR=../web n
 ## Repository layout
 
 ```
-app/api     Inventory API + tests
-app/web     Web UI
+app/api     Inventory API + tests + Dockerfile
+app/web     Web UI + Nginx config + Dockerfile
+compose.yaml  Local stack (db, api, web)
 infra/      Terraform (phase 3)
 k8s/        Helm chart and manifests (phase 4)
 .github/    CI/CD workflows (phase 2)
