@@ -1,3 +1,25 @@
-# Terraform
+# Terraform — Phase 3
 
-Phase 3 — AWS infrastructure as code (VPC, IAM, GitHub OIDC, budget alerts).
+Infrastructure as code for ShopOps on AWS. Only free resources are created here.
+
+| File | Purpose |
+|---|---|
+| `versions.tf` | Pins Terraform and the AWS provider |
+| `providers.tf` | AWS region and default tags on every resource |
+| `variables.tf` | Inputs (region, alert email, budget limit) |
+| `budgets.tf` | Monthly cost budget with alerts at $1, $5 and the forecast limit |
+| `outputs.tf` | Values printed after `apply` |
+
+## Run
+
+```bash
+cd infra
+cp terraform.tfvars.example terraform.tfvars   # then put your email in it
+terraform init      # download the AWS provider
+terraform fmt       # format the code
+terraform validate  # check the syntax
+terraform plan      # preview: what will be created
+terraform apply     # create it (type "yes")
+```
+
+Never created here: EC2, NAT Gateway, load balancers, EKS, RDS, Elastic IPs.
