@@ -26,3 +26,13 @@ output "security_group_ids" {
     db  = aws_security_group.db.id
   }
 }
+
+output "state_bucket" {
+  description = "S3 bucket that holds the Terraform state."
+  value       = aws_s3_bucket.tfstate.bucket
+}
+
+output "github_actions_role_arn" {
+  description = "Role ARN for GitHub Actions (aws-actions/configure-aws-credentials)."
+  value       = aws_iam_role.github_actions.arn
+}
