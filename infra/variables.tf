@@ -19,3 +19,9 @@ variable "monthly_budget_usd" {
   type        = number
   default     = 20
 }
+
+variable "vpc_cidr" {
+  description = "IP range of the ShopOps VPC."
+  type        = string
+  default     = "10.0.0.0/16"
+}
