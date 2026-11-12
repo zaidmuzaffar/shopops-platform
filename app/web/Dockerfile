@@ -1,7 +1,12 @@
 # syntax=docker/dockerfile:1
 # Web UI image: static files served by Nginx running as a non-root user.
 # nginx-unprivileged is the official Nginx build that runs as user 101 and listens on 8080.
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:stable-alpine
+
+# Patch OS packages (needs root for a moment), then drop back to the nginx user.
+USER root
+RUN apk upgrade --no-cache
+USER 101
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY index.html app.js style.css /usr/share/nginx/html/
