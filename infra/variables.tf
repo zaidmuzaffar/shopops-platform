@@ -29,5 +29,5 @@ variable "vpc_cidr" {
 variable "github_repo" {
   description = "GitHub repository (owner/name) allowed to assume the CI role."
   type        = string
-  default     = "zaidmuzaffar/shopops-platform"
+  default     = "zaidmuzaffar@137317812/shopops-platform@1452514812"
 }
