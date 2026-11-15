@@ -18,3 +18,4 @@ kubeconfig*
 .vscode/
 .idea/
 *.log
+*.tfplan
