@@ -17,7 +17,7 @@ metadata:
   name: api
   labels: { app: api }
 spec:
-  replicas: 2
+  # No "replicas" here: the HorizontalPodAutoscaler (hpa.yaml) owns the pod count (2 to 5).
   selector:
     matchLabels: { app: api }
   strategy:

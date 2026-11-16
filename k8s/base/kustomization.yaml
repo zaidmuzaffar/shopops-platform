@@ -11,3 +11,5 @@ resources:
   - api.yaml
   - web.yaml
   - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
