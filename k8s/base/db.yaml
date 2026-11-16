@@ -1,0 +1,66 @@
+# PostgreSQL as a StatefulSet: a stable name (db-0) and its own disk (PersistentVolumeClaim)
+# that survives pod restarts. Only reachable inside the cluster through the "db" Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  labels: { app: db }
+spec:
+  selector: { app: db }
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels: { app: db }
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels: { app: db }
+  template:
+    metadata:
+      labels: { app: db }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: shopops
+            - name: POSTGRES_USER
+              value: shopops
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: shopops-db, key: POSTGRES_PASSWORD }
+            - name: PGDATA          # a sub-folder, so the volume's own files don't confuse Postgres
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "shopops", "-d", "shopops"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "shopops", "-d", "shopops"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
