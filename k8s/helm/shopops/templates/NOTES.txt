@@ -1,0 +1,5 @@
+ShopOps {{ .Chart.AppVersion }} is deployed to namespace "{{ .Release.Namespace }}".
+
+  Pods:        kubectl -n {{ .Release.Namespace }} get pods
+  Autoscaler:  kubectl -n {{ .Release.Namespace }} get hpa api
+  Open:        http://localhost:8081  (k3d maps your Mac's port 8081 to the ingress)

@@ -1,0 +1,49 @@
+# Default values (local k3d cluster). Override per environment with -f values-<env>.yaml
+# or single values with --set, e.g. --set api.autoscaling.maxReplicas=8
+
+images:
+  api:
+    repository: shopops-api
+    tag: local
+  web:
+    repository: shopops-web
+    tag: local
+  db:
+    repository: postgres
+    tag: 16-alpine
+  pullPolicy: IfNotPresent
+
+db:
+  name: shopops
+  user: shopops
+  existingSecret: shopops-db      # created outside the chart, so no password lives in Git
+  passwordKey: POSTGRES_PASSWORD
+  storage: 1Gi
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+api:
+  logLevel: info
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 60
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+
+web:
+  replicas: 2
+  resources:
+    requests: { cpu: 25m, memory: 32Mi }
+    limits: { cpu: 100m, memory: 64Mi }
+
+ingress:
+  enabled: true
+  className: traefik
+  host: ""          # empty = answer on any host name (fine for localhost)
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

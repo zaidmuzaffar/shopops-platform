@@ -1,0 +1,15 @@
+# Apply everything with:  kubectl apply -k k8s/base
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: shopops
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: shopops
+resources:
+  - namespace.yaml
+  - db.yaml
+  - api.yaml
+  - web.yaml
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
