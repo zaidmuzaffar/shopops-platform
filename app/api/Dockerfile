@@ -2,8 +2,9 @@
 # ---------------------------------------------------------------
 # Inventory API image — multi-stage build
 #   deps    : installs production dependencies only
-#   test    : installs everything and runs the tests (docker build --target test .)
-#   runtime : the small final image that actually ships
+#   test    : installs everything and runs the tests
+#   runtime : the small final image that actually ships; it depends on the
+#             test stage, so a failing test stops the build
 # ---------------------------------------------------------------
 
 # ---- Stage 1: production dependencies ----
@@ -14,7 +15,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# ---- Stage 2: tests (optional target) ----
+# ---- Stage 2: tests ----
 FROM node:22-alpine AS test
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -35,7 +36,9 @@ WORKDIR /app
 
 # Only what the app needs to run: no tests, no dev tools, no npm cache.
 COPY --from=deps --chown=node:node /app/node_modules ./node_modules
-COPY --chown=node:node package.json ./
+# package.json comes from the test stage on purpose. BuildKit only builds the stages
+# the final image needs, so without this link it would silently skip the tests.
+COPY --from=test --chown=node:node /app/package.json ./
 COPY --chown=node:node src ./src
 
 # Never run as root: the official image ships an unprivileged "node" user.

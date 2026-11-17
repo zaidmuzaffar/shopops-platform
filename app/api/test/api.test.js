@@ -56,7 +56,12 @@ test('unknown routes return 404', async () => {
   assert.equal((await json('/nope')).status, 404);
 });
 
-test('serves the web UI from a relative WEB_DIR and blocks path traversal', async () => {
+// The web folder sits next to the API in the repo, but it is not part of the API's
+// Docker build context, so this test is skipped when the image's test stage runs.
+const WEB_DIR = require('node:path').join(__dirname, '..', '..', 'web');
+const noWebDir = !require('node:fs').existsSync(WEB_DIR) && 'web folder not available (Docker build)';
+
+test('serves the web UI from a relative WEB_DIR and blocks path traversal', { skip: noWebDir }, async () => {
   const path = require('node:path');
   const app = createApp({ store: new MemoryStore(), config: { version: 't', webDir: path.relative(process.cwd(), path.join(__dirname, '..', '..', 'web')) } });
   await new Promise((r) => app.server.listen(0, r));
