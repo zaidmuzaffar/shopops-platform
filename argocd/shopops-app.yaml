@@ -1,0 +1,22 @@
+# Argo CD watches this Git repo and keeps the cluster equal to the Helm chart in it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shopops
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/zaidmuzaffar/shopops-platform.git
+    targetRevision: main
+    path: k8s/helm/shopops
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shopops
+  syncPolicy:
+    automated:
+      prune: true      # delete from the cluster what was deleted from Git
+      selfHeal: true   # undo manual changes made directly in the cluster
