@@ -8,21 +8,29 @@
 
 The application itself is deliberately small. The interesting part is everything around it.
 
+📖 Full write-up with screenshots and lessons learned: **[ShopOps case study](https://zaidmuzaffar.github.io/projects/shopops-platform.html)**
+
 ---
 
-## Target architecture
+## Architecture
 
 ```
- Developer ──push──▶ GitHub ──▶ GitHub Actions (CI)
-                                 lint → test → build → Trivy scan → push image (GHCR)
-                                                          │
-                                         image tag bump ──▼
-                                 Argo CD (GitOps) ──sync──▶ Kubernetes (k3s)
-                                                            ├─ web (Nginx)
- Terraform ──▶ AWS: VPC · subnets · security groups ·       ├─ inventory-api (autoscaled)
-               IAM · GitHub OIDC · budget alerts            └─ PostgreSQL
-                                                            ▲
-                    Prometheus + Grafana + Alertmanager ────┘
+ Developer ── pull request ──▶ GitHub Actions (CI)
+                                 ├─ test → build → Trivy scan → push image to GHCR (main only)
+                                 └─ terraform fmt → validate → plan (AWS via OIDC, no stored keys)
+             merge to main
+                   │
+                   ▼
+ Argo CD (GitOps) ── sync ──▶ Kubernetes (k3d, local)
+                                 Traefik ingress (localhost:8081)
+                                  ├─ web   Nginx × 3
+                                  ├─ api   Node.js, 2–5 pods (autoscaled on CPU)
+                                  └─ db    PostgreSQL StatefulSet + persistent volume
+
+ Prometheus ── scrapes api /metrics every 30 s, evaluates 3 alert rules ──▶ Grafana dashboard
+
+ Terraform ──▶ AWS: VPC (2 AZs, no NAT gateway) · tiered security groups ·
+               S3 state with locking · GitHub OIDC role · budget alerts
 ```
 
 ## Roadmap
@@ -31,13 +39,15 @@ The application itself is deliberately small. The interesting part is everything
 |---|---|---|
 | 0 | App, repository layout, tests | ✅ |
 | 1 | Docker: multi-stage, non-root images, docker-compose | ✅ |
-| 2 | CI: GitHub Actions — tests, build, Trivy scan, push to GHCR | ⏳ |
-| 3 | Terraform + AWS: VPC, IAM least privilege, GitHub OIDC, budgets | ⏳ |
-| 4 | Kubernetes: k3d/k3s, Helm chart, ingress, probes, autoscaling | ⏳ |
-| 5 | GitOps CD with Argo CD, one-click rollback | ⏳ |
-| 6 | Observability: Prometheus, Grafana, alerts | ⏳ |
-| 7 | Security & reliability: TLS, secrets, backups, k6 load test | ⏳ |
+| 2 | CI: GitHub Actions — tests, build, Trivy scan, push to GHCR | ✅ |
+| 3 | Terraform + AWS: VPC, security groups, S3 state, GitHub OIDC (read-only CI role), budgets | ✅ |
+| 4 | Kubernetes: k3d, Helm chart, ingress, probes, autoscaling, disruption budgets | ✅ |
+| 5 | GitOps with Argo CD: auto-sync, prune, self-heal, rollback by `git revert` | ✅ |
+| 6 | Observability: `/metrics`, Prometheus, Grafana dashboard, alert rules | ✅ |
+| 7 | Security & reliability: TLS, secrets, backups, k6 load test | ⏳ next |
 | 8 | Docs: architecture, runbook, incident postmortem, cost report | ⏳ |
+
+Every finished phase is tagged (`phase-0` … `phase-6`). Open a tag on GitHub to see the repository exactly as it was at that point.
 
 ## The app
 
@@ -56,6 +66,7 @@ The application itself is deliberately small. The interesting part is everything
 | GET | `/api/version` | Running version |
 | GET | `/healthz` | Liveness — the process is alive |
 | GET | `/readyz` | Readiness — the app can serve traffic (database reachable) |
+| GET | `/metrics` | Prometheus metrics — requests, latency, memory, CPU, version |
 
 **Configuration** (environment variables only)
 
@@ -82,12 +93,51 @@ Open **http://localhost:8080**. Logs: `docker compose logs -f api`. Stop: `docke
 | `shopops-api` | `node:22-alpine` | `node` | multi-stage, read-only filesystem |
 | `shopops-web` | `nginx-unprivileged` | uid 101 | serves UI, proxies `/api` |
 
+## Run on Kubernetes (k3d)
+
+Needs Docker, [k3d](https://k3d.io), `kubectl` and `helm`. Everything runs on your machine.
+
+```bash
+# 1. Local cluster (1 server + 1 agent), ingress on localhost:8081
+k3d cluster create shopops --agents 1 -p "8081:80@loadbalancer"
+
+# 2. Build the images and load them into the cluster (no registry needed)
+docker build -t shopops-api:0.5.0 app/api
+docker build -t shopops-web:local app/web
+k3d image import shopops-api:0.5.0 shopops-web:local -c shopops
+
+# 3. Namespace and database password (kept out of Git; letters and numbers only)
+kubectl create namespace shopops
+kubectl -n shopops create secret generic shopops-db --from-literal=POSTGRES_PASSWORD=changeme123
+
+# 4. Monitoring stack (the chart ships a ServiceMonitor, alert rules and a dashboard for it)
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace \
+  --set alertmanager.enabled=false --set prometheus.prometheusSpec.retention=2d
+
+# 5. Argo CD, then hand the app to it: from now on the cluster follows the main branch
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl -n argocd wait --for=condition=Available deployment --all --timeout=300s
+kubectl apply -f argocd/shopops-app.yaml
+```
+
+Open **http://localhost:8081**. Without Argo CD, install the chart directly: `helm install shopops k8s/helm/shopops -n shopops` (add `--set monitoring.enabled=false` if step 4 was skipped).
+
+**Monitoring.** Grafana: `kubectl -n monitoring port-forward svc/monitoring-grafana 3001:80`, then open http://localhost:3001 (user `admin`, password from `kubectl -n monitoring get secret monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 -d`). The dashboard is **ShopOps / API (RED)**.
+
+| Alert | Fires when | Severity |
+|---|---|---|
+| `ShopOpsApiUnavailable` | no API pod is reachable for 2 minutes | critical |
+| `ShopOpsApiHighErrorRate` | more than 5% of requests fail (5xx) for 5 minutes | warning |
+| `ShopOpsApiSlow` | p95 latency is above 500 ms for 10 minutes | warning |
+
 ## Run without Docker
 
 ```bash
 cd app/api
 npm install
-npm test                          # 6 tests
+npm test                          # 11 tests
 WEB_DIR=../web npm start          # http://localhost:3000  (in-memory store)
 ```
 
@@ -101,13 +151,15 @@ DATABASE_URL=postgres://postgres:devpass@localhost:5432/shopops WEB_DIR=../web n
 ## Repository layout
 
 ```
-app/api     Inventory API + tests + Dockerfile
-app/web     Web UI + Nginx config + Dockerfile
-compose.yaml  Local stack (db, api, web)
-infra/      Terraform (phase 3)
-k8s/        Helm chart and manifests (phase 4)
-.github/    CI/CD workflows (phase 2)
-docs/       Phase notes, architecture, runbook, postmortem
+app/api           Inventory API + tests + Dockerfile
+app/web           Web UI + Nginx config + Dockerfile
+compose.yaml      Local stack (db, api, web)
+.github/          CI workflow: tests, image builds, Trivy scan, Terraform plan
+infra/            Terraform for AWS (phase 3)
+k8s/base/         Plain Kubernetes manifests with Kustomize (phase 4)
+k8s/helm/shopops  Helm chart, alert rules and Grafana dashboard (phases 4–6)
+argocd/           Argo CD application (phase 5)
+docs/             Phase notes; runbook and postmortem come in phase 8
 ```
 
 ## Author
