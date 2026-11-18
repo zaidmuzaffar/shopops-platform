@@ -1,0 +1,44 @@
+{{- if .Values.monitoring.enabled }}
+# Alert rules, evaluated by Prometheus. They watch what users feel (errors, slowness,
+# no API at all), not CPU or memory.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shopops-api
+  labels:
+    release: {{ .Values.monitoring.prometheusRelease }}
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: shopops-api
+      rules:
+        - alert: ShopOpsApiUnavailable
+          expr: absent(up{job="api", namespace="{{ .Release.Namespace }}"} == 1)
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: No ShopOps API pod is reachable
+            description: Prometheus has not been able to scrape any ShopOps API pod for 2 minutes.
+        - alert: ShopOpsApiHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="api", namespace="{{ .Release.Namespace }}", status=~"5.."}[5m]))
+              / sum(rate(http_requests_total{job="api", namespace="{{ .Release.Namespace }}"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: More than 5% of ShopOps API requests are failing
+            description: For 5 minutes, more than 5% of requests to the ShopOps API returned a 5xx error.
+        - alert: ShopOpsApiSlow
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_request_duration_seconds_bucket{job="api", namespace="{{ .Release.Namespace }}"}[5m]))
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: ShopOps API p95 latency is above 500 ms
+            description: For 10 minutes, the slowest 5% of ShopOps API requests took longer than 500 ms.
+{{- end }}

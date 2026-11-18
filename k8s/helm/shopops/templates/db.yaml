@@ -28,7 +28,7 @@ spec:
     metadata:
       labels:
         app: db
-        {{- include "shopops.labels" . | nindent 8 }}
+        {{- include "shopops.podLabels" . | nindent 8 }}
     spec:
       containers:
         - name: postgres
