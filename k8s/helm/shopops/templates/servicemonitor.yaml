@@ -1,0 +1,18 @@
+{{- if .Values.monitoring.enabled }}
+# Tells Prometheus to scrape GET /metrics on every API pod behind the "api" Service.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api
+  labels:
+    release: {{ .Values.monitoring.prometheusRelease }}   # without this label Prometheus ignores the monitor
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: http          # the named port of the api Service
+      path: /metrics
+      interval: 30s
+{{- end }}

@@ -1,0 +1,15 @@
+{{- if .Values.monitoring.enabled }}
+# The Grafana sidecar of kube-prometheus-stack loads every ConfigMap that carries the
+# label grafana_dashboard="1" as a dashboard. The JSON lives in dashboards/ as a plain
+# file, so Helm does not try to read Grafana's legend placeholders as its own templates.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shopops-grafana-dashboard
+  labels:
+    grafana_dashboard: "1"
+    {{- include "shopops.labels" . | nindent 4 }}
+data:
+  shopops-api.json: |-
+{{ .Files.Get "dashboards/shopops-api.json" | indent 4 }}
+{{- end }}

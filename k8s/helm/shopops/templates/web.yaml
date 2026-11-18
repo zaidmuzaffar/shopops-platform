@@ -27,7 +27,7 @@ spec:
     metadata:
       labels:
         app: web
-        {{- include "shopops.labels" . | nindent 8 }}
+        {{- include "shopops.podLabels" . | nindent 8 }}
     spec:
       securityContext:
         runAsNonRoot: true

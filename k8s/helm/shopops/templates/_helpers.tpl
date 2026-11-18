@@ -10,3 +10,10 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- define "shopops.image" -}}
 {{ printf "%s:%s" .repository .tag }}
 {{- end }}
+
+{{/* Labels for pod templates of the database and web pods. They leave out the chart
+     and app version on purpose: a label change in a pod template restarts the pods, and
+     a new chart version should not restart the database. */}}
+{{- define "shopops.podLabels" -}}
+app.kubernetes.io/part-of: shopops
+{{- end }}

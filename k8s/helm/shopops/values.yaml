@@ -4,7 +4,7 @@
 images:
   api:
     repository: shopops-api
-    tag: local
+    tag: "0.5.0"      # built locally and loaded with: k3d image import shopops-api:0.5.0 -c shopops
   web:
     repository: shopops-web
     tag: local
@@ -47,3 +47,7 @@ ingress:
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
+
+monitoring:
+  enabled: true                   # ServiceMonitor, alert rules and Grafana dashboard (needs kube-prometheus-stack)
+  prometheusRelease: monitoring   # kube-prometheus-stack only picks up objects labelled release=<its Helm release name>

@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const log = require('./logger');
+const { createMetrics, routeLabel, CONTENT_TYPE } = require('./metrics');
 
 const CATEGORIES = ['pump', 'wire', 'safety_cable', 'other'];
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml' };
@@ -50,6 +51,7 @@ function validateProduct(input, partial = false) {
 
 function createApp({ store, config }) {
   const state = { ready: false, shuttingDown: false };
+  const metrics = createMetrics({ version: config.version });
 
   async function route(req, res, url) {
     const { pathname } = url;
@@ -60,6 +62,10 @@ function createApp({ store, config }) {
       if (!state.ready || state.shuttingDown) return send(res, 503, { status: 'not ready' });
       try { await store.ping(); return send(res, 200, { status: 'ready' }); }
       catch (e) { return send(res, 503, { status: 'database unavailable' }); }
+    }
+    if (pathname === '/metrics' && req.method === 'GET') {                           // Prometheus scrapes this
+      res.writeHead(200, { 'Content-Type': CONTENT_TYPE, 'Cache-Control': 'no-store' });
+      return res.end(metrics.render());
     }
     if (pathname === '/api/version') return send(res, 200, { version: config.version });
 
@@ -104,10 +110,14 @@ function createApp({ store, config }) {
 
   const server = http.createServer(async (req, res) => {
     const started = Date.now();
+    const start = process.hrtime.bigint();          // precise clock for the duration metric
     const url = new URL(req.url, 'http://localhost');
-    // Log every request when it finishes (health checks are skipped to keep logs quiet).
+    // When a request finishes: record it in the metrics, then log it
+    // (health checks and metric scrapes are skipped to keep logs quiet).
     res.on('finish', () => {
-      if (url.pathname === '/healthz' || url.pathname === '/readyz') return;
+      const route = routeLabel(url.pathname);
+      if (!route) return;                            // probes and scrapes: no metric, no log line
+      metrics.observe({ method: req.method, route, status: res.statusCode, seconds: Number(process.hrtime.bigint() - start) / 1e9 });
       log.info('request', { method: req.method, path: url.pathname, status: res.statusCode, ms: Date.now() - started });
     });
     try {
@@ -118,7 +128,7 @@ function createApp({ store, config }) {
     }
   });
 
-  return { server, state };
+  return { server, state, metrics };
 }
 
 module.exports = { createApp, validateProduct, CATEGORIES };
