@@ -17,3 +17,57 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- define "shopops.podLabels" -}}
 app.kubernetes.io/part-of: shopops
 {{- end }}
+
+{{/* Container settings shared by the backup and restore-test jobs: the same Postgres
+     image as the database (so pg_dump always matches the server version), connection
+     settings from environment variables, and a locked-down security context. */}}
+{{- define "shopops.pgClientContainer" -}}
+image: {{ include "shopops.image" .Values.images.db }}
+imagePullPolicy: {{ .Values.images.pullPolicy }}
+command: ["/bin/sh", "-c"]
+env:
+  - name: PGHOST
+    value: db
+  - name: PGUSER
+    value: {{ .Values.db.user | quote }}
+  - name: PGDATABASE
+    value: {{ .Values.db.name | quote }}
+  - name: PGPASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: {{ .Values.db.existingSecret }}
+        key: {{ .Values.db.passwordKey }}
+  - name: HOME
+    value: /tmp
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+resources:
+  {{- toYaml .Values.backup.resources | nindent 2 }}
+volumeMounts:
+  - name: backups
+    mountPath: /backups
+  - name: tmp
+    mountPath: /tmp
+{{- end }}
+
+{{/* Pod settings shared by the backup and restore-test jobs. uid 70 is the postgres user
+     of the Alpine Postgres image, so the jobs never run as root. */}}
+{{- define "shopops.pgClientPod" -}}
+restartPolicy: Never
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 70
+  runAsGroup: 70
+  fsGroup: 70
+  seccompProfile:
+    type: RuntimeDefault
+volumes:
+  - name: backups
+    persistentVolumeClaim:
+      claimName: db-backups
+  - name: tmp
+    emptyDir: {}
+{{- end }}
