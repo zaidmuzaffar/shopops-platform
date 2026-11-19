@@ -26,8 +26,9 @@ The application itself is deliberately small. The interesting part is everything
                                   ├─ web   Nginx × 3
                                   ├─ api   Node.js, 2–5 pods (autoscaled on CPU)
                                   └─ db    PostgreSQL StatefulSet + persistent volume
+                                           daily pg_dump backups (CronJob) + restore test
 
- Prometheus ── scrapes api /metrics every 30 s, evaluates 3 alert rules ──▶ Grafana dashboard
+ Prometheus ── scrapes api /metrics every 30 s, evaluates 4 alert rules ──▶ Grafana dashboard
 
  Terraform ──▶ AWS: VPC (2 AZs, no NAT gateway) · tiered security groups ·
                S3 state with locking · GitHub OIDC role · budget alerts
@@ -44,7 +45,7 @@ The application itself is deliberately small. The interesting part is everything
 | 4 | Kubernetes: k3d, Helm chart, ingress, probes, autoscaling, disruption budgets | ✅ |
 | 5 | GitOps with Argo CD: auto-sync, prune, self-heal, rollback by `git revert` | ✅ |
 | 6 | Observability: `/metrics`, Prometheus, Grafana dashboard, alert rules | ✅ |
-| 7 | Security & reliability: TLS, secrets, backups, k6 load test | ⏳ next |
+| 7 | Security & reliability: backups, TLS, secrets, k6 load test | 🚧 in progress |
 | 8 | Docs: architecture, runbook, incident postmortem, cost report | ⏳ |
 
 Every finished phase is tagged (`phase-0` … `phase-6`). Open a tag on GitHub to see the repository exactly as it was at that point.
@@ -131,6 +132,15 @@ Open **http://localhost:8081**. Without Argo CD, install the chart directly: `he
 | `ShopOpsApiUnavailable` | no API pod is reachable for 2 minutes | critical |
 | `ShopOpsApiHighErrorRate` | more than 5% of requests fail (5xx) for 5 minutes | warning |
 | `ShopOpsApiSlow` | p95 latency is above 500 ms for 10 minutes | warning |
+| `ShopOpsBackupMissing` | no successful database backup for 26 hours | warning |
+
+**Backups.** A CronJob runs `pg_dump` every day at 08:00 UTC and keeps the newest 7 dumps on their own volume, which neither Helm nor Argo CD will ever delete. A backup only counts once it has been restored, so the chart also ships a restore test: it restores the newest dump into a scratch database and compares row counts.
+
+```bash
+kubectl -n shopops create job --from=cronjob/db-backup backup-now           # back up now
+kubectl -n shopops create job --from=cronjob/db-restore-test restore-test   # prove it restores
+kubectl -n shopops logs job/restore-test                                    # ends with RESTORE TEST PASSED
+```
 
 ## Run without Docker
 
