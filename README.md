@@ -92,7 +92,7 @@ Open **http://localhost:8080**. Logs: `docker compose logs -f api`. Stop: `docke
 | Image | Base | Runs as | Notes |
 |---|---|---|---|
 | `shopops-api` | `node:22-alpine` | `node` | multi-stage, read-only filesystem |
-| `shopops-web` | `nginx-unprivileged` | uid 101 | serves UI, proxies `/api` |
+| `shopops-web` | `nginx:stable-alpine-slim` (official, made non-root) | uid 101 | serves UI, proxies `/api` |
 
 ## Run on Kubernetes (k3d)
 
