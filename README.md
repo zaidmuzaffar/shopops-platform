@@ -45,10 +45,10 @@ The application itself is deliberately small. The interesting part is everything
 | 4 | Kubernetes: k3d, Helm chart, ingress, probes, autoscaling, disruption budgets | ✅ |
 | 5 | GitOps with Argo CD: auto-sync, prune, self-heal, rollback by `git revert` | ✅ |
 | 6 | Observability: `/metrics`, Prometheus, Grafana dashboard, alert rules | ✅ |
-| 7 | Security & reliability: backups, TLS, secrets, k6 load test | 🚧 in progress |
-| 8 | Docs: architecture, runbook, incident postmortem, cost report | ⏳ |
+| 7 | Security & reliability: backups with a restore test, sealed secrets, TLS, k6 load test | ✅ |
+| 8 | Docs: architecture, runbook, incident postmortem, cost report | ⏳ next |
 
-Every finished phase is tagged (`phase-0` … `phase-6`). Open a tag on GitHub to see the repository exactly as it was at that point.
+Every finished phase is tagged (`phase-0` … `phase-7`). Open a tag on GitHub to see the repository exactly as it was at that point.
 
 ## The app
 
@@ -161,6 +161,13 @@ kubectl -n shopops create job --from=cronjob/db-restore-test restore-test   # pr
 kubectl -n shopops logs job/restore-test                                    # ends with RESTORE TEST PASSED
 ```
 
+**Load test.** [k6](https://k6.io) plays shoppers browsing the products and staff changing stock at the same time, for about 2.5 minutes, and fails if more than 1% of requests fail or p95 latency goes above 500 ms (the same line as the `ShopOpsApiSlow` alert). Products the test creates are deleted again.
+
+```bash
+k6 run -e SMOKE=1 loadtest/shopops.js    # quick check that everything answers
+k6 run loadtest/shopops.js               # the real test; watch: kubectl -n shopops get hpa api -w
+```
+
 ## Run without Docker
 
 ```bash
@@ -186,8 +193,9 @@ compose.yaml      Local stack (db, api, web)
 .github/          CI workflow: tests, image builds, Trivy scan, Terraform plan
 infra/            Terraform for AWS (phase 3)
 k8s/base/         Plain Kubernetes manifests with Kustomize (phase 4)
-k8s/helm/shopops  Helm chart, alert rules and Grafana dashboard (phases 4–6)
+k8s/helm/shopops  Helm chart: app, alerts, dashboard, backups, sealed secret, TLS (phases 4–7)
 argocd/           Argo CD application (phase 5)
+loadtest/         k6 load test (phase 7)
 docs/             Phase notes; runbook and postmortem come in phase 8
 ```
 
