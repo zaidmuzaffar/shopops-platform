@@ -1,0 +1,42 @@
+{{- if and .Values.ingress.enabled .Values.ingress.tls.enabled .Values.ingress.tls.localCA }}
+# A small certificate authority for local clusters (Phase 7). cert-manager creates a
+# self-signed CA certificate, and the "shopops-local-ca" Issuer signs the site certificate
+# with it. In the cloud a Let's Encrypt issuer takes its place; the Ingress stays the same.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: shopops-selfsigned
+  labels:
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: shopops-local-ca
+  labels:
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: "ShopOps Local CA"
+  secretName: shopops-local-ca
+  duration: 8760h        # 1 year; cert-manager renews it before it expires
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: shopops-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: shopops-local-ca
+  labels:
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: shopops-local-ca
+{{- end }}

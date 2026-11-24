@@ -1,23 +1,57 @@
 {{- if .Values.ingress.enabled }}
+{{- $tls := .Values.ingress.tls }}
+# The way in. Without TLS: one Ingress on plain HTTP. With TLS (Phase 7): the main Ingress
+# answers only on HTTPS, with a certificate that cert-manager issues and renews, and a second
+# Ingress on plain HTTP does nothing but redirect to HTTPS.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: shopops
   labels:
     {{- include "shopops.labels" . | nindent 4 }}
+  {{- if $tls.enabled }}
+  annotations:
+    cert-manager.io/issuer: {{ $tls.issuer }}
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if $tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host | default "localhost" | quote }}
+      secretName: shopops-tls
+  {{- end }}
+  rules:
+    {{- include "shopops.ingressRule" . | nindent 4 }}
+{{- if $tls.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shopops-http
+  labels:
+    {{- include "shopops.labels" . | nindent 4 }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-redirect-https@kubernetescrd
 spec:
   ingressClassName: {{ .Values.ingress.className }}
   rules:
-    - {{- with .Values.ingress.host }}
-      host: {{ . | quote }}
-      {{- end }}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: web
-                port:
-                  number: 8080
+    {{- include "shopops.ingressRule" . | nindent 4 }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  labels:
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+    {{- with $tls.redirectPort }}
+    port: {{ . | quote }}
+    {{- end }}
+{{- end }}
 {{- end }}

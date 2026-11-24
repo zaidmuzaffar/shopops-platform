@@ -29,3 +29,7 @@ web:
 
 ingress:
   host: shop.example.com
+  tls:
+    issuer: letsencrypt        # a Let's Encrypt (ACME) Issuer, created for the cloud deploy
+    localCA: false
+    redirectPort: ""           # standard port 443
