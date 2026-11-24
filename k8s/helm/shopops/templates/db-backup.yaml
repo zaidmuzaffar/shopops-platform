@@ -1,0 +1,111 @@
+{{- if .Values.backup.enabled }}
+# Database backups (Phase 7).
+#   db-backup        runs pg_dump on a schedule and keeps the newest dumps on their own volume.
+#   db-restore-test  never runs on its own (suspended). It restores the newest dump into a
+#                    scratch database and compares row counts: a backup only counts once it
+#                    has been restored.
+# Run either one now:
+#   kubectl -n shopops create job --from=cronjob/db-backup backup-now
+#   kubectl -n shopops create job --from=cronjob/db-restore-test restore-test
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-backups
+  labels:
+    app: db-backup
+    {{- include "shopops.labels" . | nindent 4 }}
+  annotations:
+    # Backups must outlive mistakes: never delete this volume automatically,
+    # not on helm uninstall and not when Argo CD prunes.
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup
+  labels:
+    app: db-backup
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid          # never two backups at the same time
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: db-backup
+            {{- include "shopops.podLabels" . | nindent 12 }}
+        spec:
+          {{- include "shopops.pgClientPod" . | nindent 10 }}
+          containers:
+            - name: pg-dump
+              {{- include "shopops.pgClientContainer" . | nindent 14 }}
+              args:
+                - |
+                  set -eu
+                  file="/backups/{{ .Values.db.name }}-$(date -u +%Y%m%d-%H%M%S).dump"
+                  # Write under a temporary name first, so a dump that fails half-way never
+                  # looks like a finished backup, and clean that file up if anything fails.
+                  trap 'rm -f "$file.partial"' EXIT
+                  pg_dump --format=custom --file="$file.partial"
+                  pg_restore --list "$file.partial" > /dev/null    # the archive can be read back
+                  mv "$file.partial" "$file"
+                  echo "Backup written: $file ($(du -h "$file" | cut -f1))"
+                  # Keep only the newest {{ .Values.backup.keep }} dumps.
+                  ls -1t /backups/*.dump | tail -n +{{ add1 .Values.backup.keep }} | xargs -r rm -f --
+                  echo "Backups on the volume:"
+                  ls -lh /backups
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-restore-test
+  labels:
+    app: db-restore-test
+    {{- include "shopops.labels" . | nindent 4 }}
+spec:
+  schedule: "0 0 1 1 *"    # never used: the CronJob is suspended and only started by hand
+  suspend: true
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: db-restore-test
+            {{- include "shopops.podLabels" . | nindent 12 }}
+        spec:
+          {{- include "shopops.pgClientPod" . | nindent 10 }}
+          containers:
+            - name: pg-restore
+              {{- include "shopops.pgClientContainer" . | nindent 14 }}
+              args:
+                - |
+                  set -eu
+                  latest=$(ls -1t /backups/*.dump 2>/dev/null | head -n 1)
+                  [ -n "$latest" ] || { echo "No backup found in /backups"; exit 1; }
+                  echo "Restoring $latest into a scratch database (restore_test)"
+                  dropdb --if-exists restore_test
+                  createdb restore_test
+                  pg_restore --no-owner --exit-on-error --dbname=restore_test "$latest"
+                  live=$(psql -tAc "SELECT count(*) FROM products")
+                  restored=$(psql -d restore_test -tAc "SELECT count(*) FROM products")
+                  dropdb restore_test
+                  echo "products: live=$live, restored=$restored"
+                  if [ "$live" = "$restored" ]; then
+                    echo "RESTORE TEST PASSED"
+                  else
+                    echo "RESTORE TEST FAILED: row counts differ (or the data changed after the backup)"
+                    exit 1
+                  fi
+{{- end }}

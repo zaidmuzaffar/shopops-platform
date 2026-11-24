@@ -1,6 +1,7 @@
 {{- if .Values.monitoring.enabled }}
 # Alert rules, evaluated by Prometheus. They watch what users feel (errors, slowness,
-# no API at all), not CPU or memory.
+# no API at all), not CPU or memory, plus missing backups: those are otherwise only
+# noticed on the day a restore is needed.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -41,4 +42,18 @@ spec:
           annotations:
             summary: ShopOps API p95 latency is above 500 ms
             description: For 10 minutes, the slowest 5% of ShopOps API requests took longer than 500 ms.
+{{- if .Values.backup.enabled }}
+    - name: shopops-backup
+      rules:
+        - alert: ShopOpsBackupMissing
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="{{ .Release.Namespace }}", cronjob="db-backup"}
+              > 26 * 3600
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: No successful ShopOps database backup in the last 26 hours
+            description: The db-backup CronJob has not finished successfully for more than 26 hours. Check it with kubectl -n {{ .Release.Namespace }} get cronjob,jobs.
+{{- end }}
 {{- end }}
