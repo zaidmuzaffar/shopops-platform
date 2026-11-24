@@ -16,8 +16,14 @@ images:
 db:
   name: shopops
   user: shopops
-  existingSecret: shopops-db      # created outside the chart, so no password lives in Git
+  existingSecret: shopops-db      # the Secret the database and the API read the password from
   passwordKey: POSTGRES_PASSWORD
+  # The password sealed for this cluster's Sealed Secrets controller: safe to commit, opens
+  # only inside this cluster. Empty = no SealedSecret; create the Secret by hand instead.
+  # Seal (or re-seal) the current password and print the value to paste here:
+  #   kubectl -n shopops get secret shopops-db -o jsonpath='{.data.POSTGRES_PASSWORD}' \
+  #     | base64 -d | kubeseal --raw --namespace shopops --name shopops-db
+  sealedPassword: "AgAYKEmGHDlooXiVKRKkY1IQVH21CTks5wbTyFLa2GNZInKsNDmvECi7Vwb4GIODCQudOyXK+lhO0vFoAnvWcWdN1KgT3mRAYzAyboEraaKcAZwDj6QCt57i68W0P5sMCClhZ8ISz1WL6Vmu1C3vWU6goTi/EEH8Sui+aS7W8dw65Wr0FMrJlbk/crafE8NV+YBGjE+TVmd892b2r1Auo0M+BZIcKJNtDOelrIU3cZUa/V8sgOq8XwXSaWG0eiCqeZ6S2R0LMFLmRPfex74av7wjWPlP6UzJyvvYAxQpgp2rPys7NU1CqRuTExPh/g3qIXohSMhN1YOFrEGU8RwA6e6KyCsQf103qGnb4FzBnx580HmpmnChlDim6CTDgt9PreSWGdue9RuXTljwTgJnwBkLM4PBwbMFuGIZ+pvggfhZzhyAWTykQoS4puMwSU7sszn/GG3VwaTEDgGAJEYxXq2Xv9SVknC6oETUl4CjrCxB82mD9IAFc+iDSRHjMe4b/LGRUs0m8kZ7gqm9YqblXFpGDS1vGy7dlHLp7vchYYVSVz3F/E4UmlO8t298E2+daFLz8HPsxx1fqn7apUdp4IBz1tS9iHQqdCZyt9vdcJQQ6iqmhAVMonFshT87AqLwk2LOhbcKZS9P7Qk2V+dc9nHSMpW/GoNDGPcOTxcqMNUQ5Oqbd115WvcstXnzFll5ycmB8OS13Y6x3nz9"
   storage: 1Gi
   resources:
     requests: { cpu: 100m, memory: 128Mi }
