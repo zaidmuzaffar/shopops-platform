@@ -107,9 +107,14 @@ docker build -t shopops-api:0.5.0 app/api
 docker build -t shopops-web:local app/web
 k3d image import shopops-api:0.5.0 shopops-web:local -c shopops
 
-# 3. Namespace and database password (kept out of Git; letters and numbers only)
+# 3. Namespace, Sealed Secrets, and the database password sealed for YOUR cluster
+#    (the value in values.yaml opens only on the cluster it was sealed for; letters and numbers only)
 kubectl create namespace shopops
-kubectl -n shopops create secret generic shopops-db --from-literal=POSTGRES_PASSWORD=changeme123
+helm repo add sealed-secrets https://bitnami.github.io/sealed-secrets
+helm install sealed-secrets sealed-secrets/sealed-secrets -n kube-system --version 2.22.0 \
+  --set-string fullnameOverride=sealed-secrets-controller
+echo -n 'changeme123' | kubeseal --raw --namespace shopops --name shopops-db
+#    -> put the printed value into db.sealedPassword in k8s/helm/shopops/values.yaml (in your fork)
 
 # 4. Monitoring stack (the chart ships a ServiceMonitor, alert rules and a dashboard for it)
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -133,6 +138,8 @@ Open **http://localhost:8081**. Without Argo CD, install the chart directly: `he
 | `ShopOpsApiHighErrorRate` | more than 5% of requests fail (5xx) for 5 minutes | warning |
 | `ShopOpsApiSlow` | p95 latency is above 500 ms for 10 minutes | warning |
 | `ShopOpsBackupMissing` | no successful database backup for 26 hours | warning |
+
+**Secrets.** The database password is in Git only as a SealedSecret: encrypted with the cluster's public key and opened only by the Sealed Secrets controller inside the cluster. Back up the controller's private key somewhere safe outside Git (`kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml`): without it, the sealed password cannot be opened after a cluster rebuild.
 
 **Backups.** A CronJob runs `pg_dump` every day at 08:00 UTC and keeps the newest 7 dumps on their own volume, which neither Helm nor Argo CD will ever delete. A backup only counts once it has been restored, so the chart also ships a restore test: it restores the newest dump into a scratch database and compares row counts.
 
