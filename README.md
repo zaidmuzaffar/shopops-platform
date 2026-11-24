@@ -22,7 +22,7 @@ The application itself is deliberately small. The interesting part is everything
                    │
                    ▼
  Argo CD (GitOps) ── sync ──▶ Kubernetes (k3d, local)
-                                 Traefik ingress (localhost:8081)
+                                 Traefik ingress: https://localhost:8443 (HTTP :8081 redirects)
                                   ├─ web   Nginx × 3
                                   ├─ api   Node.js, 2–5 pods (autoscaled on CPU)
                                   └─ db    PostgreSQL StatefulSet + persistent volume
@@ -99,8 +99,8 @@ Open **http://localhost:8080**. Logs: `docker compose logs -f api`. Stop: `docke
 Needs Docker, [k3d](https://k3d.io), `kubectl` and `helm`. Everything runs on your machine.
 
 ```bash
-# 1. Local cluster (1 server + 1 agent), ingress on localhost:8081
-k3d cluster create shopops --agents 1 -p "8081:80@loadbalancer"
+# 1. Local cluster (1 server + 1 agent), ingress on localhost:8081 (HTTP) and :8443 (HTTPS)
+k3d cluster create shopops --agents 1 -p "8081:80@loadbalancer" -p "8443:443@loadbalancer"
 
 # 2. Build the images and load them into the cluster (no registry needed)
 docker build -t shopops-api:0.5.0 app/api
@@ -116,10 +116,13 @@ helm install sealed-secrets sealed-secrets/sealed-secrets -n kube-system --versi
 echo -n 'changeme123' | kubeseal --raw --namespace shopops --name shopops-db
 #    -> put the printed value into db.sealedPassword in k8s/helm/shopops/values.yaml (in your fork)
 
-# 4. Monitoring stack (the chart ships a ServiceMonitor, alert rules and a dashboard for it)
+# 4. Monitoring stack and cert-manager (the chart ships alert rules and a dashboard for the
+#    first; the second issues and renews its HTTPS certificate)
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace \
   --set alertmanager.enabled=false --set prometheus.prometheusSpec.retention=2d
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager --version v1.21.3 \
+  -n cert-manager --create-namespace --set crds.enabled=true
 
 # 5. Argo CD, then hand the app to it: from now on the cluster follows the main branch
 kubectl create namespace argocd
@@ -128,7 +131,14 @@ kubectl -n argocd wait --for=condition=Available deployment --all --timeout=300s
 kubectl apply -f argocd/shopops-app.yaml
 ```
 
-Open **http://localhost:8081**. Without Argo CD, install the chart directly: `helm install shopops k8s/helm/shopops -n shopops` (add `--set monitoring.enabled=false` if step 4 was skipped).
+Open **https://localhost:8443** (plain HTTP on :8081 redirects there). The certificate is signed by a small CA the chart creates, so the browser warns until you trust that CA. To check it from the terminal instead:
+
+```bash
+kubectl -n shopops get secret shopops-local-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > shopops-local-ca.crt
+curl --cacert shopops-local-ca.crt https://localhost:8443/api/products
+```
+
+Without Argo CD, install the chart directly: `helm install shopops k8s/helm/shopops -n shopops` (add `--set monitoring.enabled=false` and `--set ingress.tls.enabled=false` for the parts of step 4 you skipped).
 
 **Monitoring.** Grafana: `kubectl -n monitoring port-forward svc/monitoring-grafana 3001:80`, then open http://localhost:3001 (user `admin`, password from `kubectl -n monitoring get secret monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 -d`). The dashboard is **ShopOps / API (RED)**.
 
@@ -138,6 +148,8 @@ Open **http://localhost:8081**. Without Argo CD, install the chart directly: `he
 | `ShopOpsApiHighErrorRate` | more than 5% of requests fail (5xx) for 5 minutes | warning |
 | `ShopOpsApiSlow` | p95 latency is above 500 ms for 10 minutes | warning |
 | `ShopOpsBackupMissing` | no successful database backup for 26 hours | warning |
+
+**HTTPS.** cert-manager issues the site certificate and renews it before it expires. On a local cluster it is signed by a small CA the chart creates; in the cloud a Let's Encrypt issuer takes its place, and the Ingress stays the same. Plain HTTP only redirects to HTTPS.
 
 **Secrets.** The database password is in Git only as a SealedSecret: encrypted with the cluster's public key and opened only by the Sealed Secrets controller inside the cluster. Back up the controller's private key somewhere safe outside Git (`kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml`): without it, the sealed password cannot be opened after a cluster rebuild.
 

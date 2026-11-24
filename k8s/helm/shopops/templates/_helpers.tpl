@@ -71,3 +71,20 @@ volumes:
   - name: tmp
     emptyDir: {}
 {{- end }}
+
+{{/* One Ingress rule: every path goes to the web service (Nginx), which serves the UI and
+     proxies /api to the API. Shared by the HTTPS Ingress and the HTTP redirect Ingress. */}}
+{{- define "shopops.ingressRule" -}}
+- {{- with .Values.ingress.host }}
+  host: {{ . | quote }}
+  {{- end }}
+  http:
+    paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web
+            port:
+              number: 8080
+{{- end }}

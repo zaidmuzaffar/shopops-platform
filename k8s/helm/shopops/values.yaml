@@ -60,6 +60,11 @@ ingress:
   enabled: true
   className: traefik
   host: ""          # empty = answer on any host name (fine for localhost)
+  tls:
+    enabled: true
+    issuer: shopops-local-ca   # the cert-manager Issuer (in this namespace) that signs the certificate
+    localCA: true              # create that issuer as a small self-signed CA (local clusters only)
+    redirectPort: "8443"       # HTTP redirects to this port: the HTTPS port k3d publishes on the Mac
 
 podDisruptionBudget:
   enabled: true
