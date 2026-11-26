@@ -46,7 +46,7 @@ The application itself is deliberately small. The interesting part is everything
 | 5 | GitOps with Argo CD: auto-sync, prune, self-heal, rollback by `git revert` | ✅ |
 | 6 | Observability: `/metrics`, Prometheus, Grafana dashboard, alert rules | ✅ |
 | 7 | Security & reliability: backups with a restore test, sealed secrets, TLS, k6 load test | ✅ |
-| 8 | Docs: architecture, runbook, incident postmortem, cost report | ⏳ next |
+| 8 | Docs: architecture, runbook, incident postmortem, cost report | ⏳ in progress |
 
 Every finished phase is tagged (`phase-0` … `phase-7`). Open a tag on GitHub to see the repository exactly as it was at that point.
 
@@ -153,7 +153,7 @@ Without Argo CD, install the chart directly: `helm install shopops k8s/helm/shop
 
 **Secrets.** The database password is in Git only as a SealedSecret: encrypted with the cluster's public key and opened only by the Sealed Secrets controller inside the cluster. Back up the controller's private key somewhere safe outside Git (`kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml`): without it, the sealed password cannot be opened after a cluster rebuild.
 
-**Backups.** A CronJob runs `pg_dump` every day at 08:00 UTC and keeps the newest 7 dumps on their own volume, which neither Helm nor Argo CD will ever delete. A backup only counts once it has been restored, so the chart also ships a restore test: it restores the newest dump into a scratch database and compares row counts.
+**Backups.** A CronJob runs `pg_dump` every day at 08:00 UTC and keeps the newest 7 dumps on their own volume, which neither Helm nor Argo CD will ever delete. A backup only counts once it has been restored, so the chart also ships a restore test: it restores the newest dump into a scratch database and compares row counts. Each run first waits up to 3 minutes for the database, so a backup that starts while the cluster is still waking up does not fail. On a laptop that sleeps, a run can also start late; the [postmortem of the first missed backup](docs/postmortems/2026-11-25-missed-backup.md) explains why and how the alert caught it.
 
 ```bash
 kubectl -n shopops create job --from=cronjob/db-backup backup-now           # back up now
@@ -196,7 +196,7 @@ k8s/base/         Plain Kubernetes manifests with Kustomize (phase 4)
 k8s/helm/shopops  Helm chart: app, alerts, dashboard, backups, sealed secret, TLS (phases 4–7)
 argocd/           Argo CD application (phase 5)
 loadtest/         k6 load test (phase 7)
-docs/             Phase notes; runbook and postmortem come in phase 8
+docs/             Phase notes and postmortems; the runbook comes in phase 8
 ```
 
 ## Author
